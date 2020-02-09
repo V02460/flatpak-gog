@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import json
 import logging
 import os
 import re
+import subprocess
 import zipfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from itertools import count, takewhile
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, List, Mapping, Optional, TextIO
 
 from typing_extensions import Literal
@@ -16,12 +19,16 @@ from typing_extensions import Literal
 logging.basicConfig(format="%(levelname)s: %(message)s")
 
 CACHE_DIR = "files"
+DEFAULT_ICON = "default-icon.png"
 
 DEFAULT_TEMPLATE = "com.gog.Template.json"
 I386_COMPAT_TEMPLATE = "com.gog.i386-compat.Template.json"
 
 MOJO_GAMEMODULE = "modules/game-mojo.Template.json"
 INNO_GAMEMODULE = "modules/game-inno.Template.json"
+
+
+NA = [None]
 
 Json = OrderedDict  # [str, Any]
 Transform = Callable[[Json], Json]
@@ -70,10 +77,63 @@ class GameInfo:
     @staticmethod
     def fromInnoSetup(installer: str) -> "GameInfo":
         """Get game info from the Inno Setup format used by GOG Linux installers."""
+        def runInnoExtract(directory: str) -> None:
+            subprocess.run(
+                [
+                    "innoextract",
+                    "--gog",
+                    "--exclude-temp",
+                    f"--output-dir={directory}",
+                    installer,
+                ]
+            )
 
-        return GameInfo(
-            "Game", "1.0", "1.0", None, "1970-01-01", "default-icon.png", "inno"
-        )
+        def findIcoFile(directory: str) -> Optional[str]:
+            # TODO: Extract ICO from goggame-*.dll
+            iconpath = os.path.join(directory, "app", "goggame-*.ico")
+            return (glob.glob(iconpath) or NA)[0]
+
+        def convertIcon(icofile: str, savedir: str) -> str:
+            """Returns the path to the file converted from ICO to PNG."""
+            try:
+                from PIL import Image
+            except ImportError:
+                logging.warning("pillow is not installed. Using default icon for game.")
+                return DEFAULT_ICON
+
+            iconpath = os.path.join(savedir, "icon.png")
+            Image.open(icofile).save(iconpath)
+
+            return iconpath
+
+        def getIcon(directory: str) -> str:
+            ico_file = findIcoFile(tmpdir)
+            if not ico_file:
+                logging.warning(
+                    "Could not find icon in installer. Using default icon for game."
+                )
+                return DEFAULT_ICON
+            return convertIcon(ico_file, CACHE_DIR)
+
+        # defaultname, _ = os.path.splitext(installer)
+
+        with TemporaryDirectory(dir="files") as tmpdir:
+            try:
+                runInnoExtract(tmpdir)
+            except subprocess.SubprocessError:
+                logging.warning(
+                    "Could not run innoextract. Do you have it installed? "
+                    "Proceeding with default values for metadata."
+                )
+                return GameInfo(
+                    "Game", "1.0", "1.0", None, "1970-01-01", DEFAULT_ICON, "inno"
+                )
+
+            iconpath = getIcon(tmpdir)
+
+            subprocess.run(["zenity", "--info", "--no-wrap", "--text=Wait!"])
+
+        return GameInfo("Game", "1.0", "1.0", None, "1970-01-01", iconpath, "inno")
 
     @staticmethod
     def _lookupArch(gamename: str) -> Arch:
