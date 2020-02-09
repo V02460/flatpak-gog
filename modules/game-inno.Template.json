@@ -39,7 +39,7 @@
         },
         {
             "type": "file",
-            "path": "default-icon.png",
+            "path": "ICON",
             "dest-filename": "icon.png"
         }
     ]

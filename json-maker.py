@@ -15,6 +15,8 @@ from typing_extensions import Literal
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 
+CACHE_DIR = "files"
+
 DEFAULT_TEMPLATE = "com.gog.Template.json"
 I386_COMPAT_TEMPLATE = "com.gog.i386-compat.Template.json"
 
@@ -35,6 +37,7 @@ class GameInfo:
     # arch parameter requires Optional, but arch attribute doesn't
     _arch: Optional[Arch] = field(repr=False, compare=False, hash=False)
     gogversiondate: str
+    iconpath: Optional[str]
     typ: InstallerType
     name: str = field(init=False)
     appid: str = field(init=False)
@@ -62,13 +65,15 @@ class GameInfo:
             filedatetime = myzip.getinfo('data/noarch/gameinfo').date_time
         gogversiondate = "{0}-{1}-{2}".format(*filedatetime)
 
-        return GameInfo(name, gogversion, version, None, gogversiondate, "mojo")
+        return GameInfo(name, gogversion, version, None, gogversiondate, None, "mojo")
 
     @staticmethod
     def fromInnoSetup(installer: str) -> "GameInfo":
         """Get game info from the Inno Setup format used by GOG Linux installers."""
 
-        return GameInfo("Game", "1.0", "1.0", None, "1970-01-01", "inno")
+        return GameInfo(
+            "Game", "1.0", "1.0", None, "1970-01-01", "default-icon.png", "inno"
+        )
 
     @staticmethod
     def _lookupArch(gamename: str) -> Arch:
@@ -116,6 +121,7 @@ class Template:
         self.replace_dict: Mapping[str, str] = {
             "APPID": self.gameinfo.appid,
             "GAMENAME": self.gameinfo.name,
+            "ICON": self.gameinfo.iconpath or "",
             "REPLACELONGNAME": self.gameinfo.origname,
             "REPLACESHORTNAME": self.gameinfo.name,
             "REPLACEVERSIONSTRING": self.gameinfo.gogversion,
